@@ -891,6 +891,8 @@ static const char *llama_ftype_name(enum llama_ftype ftype) {
     switch (ftype) {
         case LLAMA_FTYPE_ALL_F32:     return "all F32";
         case LLAMA_FTYPE_MOSTLY_F16:  return "mostly F16";
+        case LLAMA_FTYPE_MOSTLY_Q1_0: return "mostly Q1_0";
+        case LLAMA_FTYPE_MOSTLY_Q1_1: return "mostly Q1_1";
         case LLAMA_FTYPE_MOSTLY_Q4_0: return "mostly Q4_0";
         case LLAMA_FTYPE_MOSTLY_Q4_1: return "mostly Q4_1";
         case LLAMA_FTYPE_MOSTLY_Q4_1_SOME_F16:
@@ -2058,6 +2060,8 @@ llama_token llama_sample_token(struct llama_context * ctx, llama_token_data_arra
 static void llama_model_quantize_internal(const std::string & fname_inp, const std::string & fname_out, enum llama_ftype ftype, int nthread) {
     ggml_type quantized_type;
     switch (ftype) {
+        case LLAMA_FTYPE_MOSTLY_Q1_0: quantized_type = GGML_TYPE_Q1_0; break;
+        case LLAMA_FTYPE_MOSTLY_Q1_1: quantized_type = GGML_TYPE_Q1_1; break;
         case LLAMA_FTYPE_MOSTLY_Q4_0: quantized_type = GGML_TYPE_Q4_0; break;
         case LLAMA_FTYPE_MOSTLY_Q4_1: quantized_type = GGML_TYPE_Q4_1; break;
         case LLAMA_FTYPE_MOSTLY_Q5_0: quantized_type = GGML_TYPE_Q5_0; break;
