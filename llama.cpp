@@ -502,6 +502,8 @@ struct llama_file_loader {
             switch (shard.type) {
                 case GGML_TYPE_F32:
                 case GGML_TYPE_F16:
+                case GGML_TYPE_Q1_0:
+                case GGML_TYPE_Q1_1:
                 case GGML_TYPE_Q4_0:
                 case GGML_TYPE_Q4_1:
                 case GGML_TYPE_Q5_0:
@@ -577,6 +579,8 @@ struct llama_file_saver {
         switch (new_type) {
             case GGML_TYPE_F32:
             case GGML_TYPE_F16:
+            case GGML_TYPE_Q1_0:
+            case GGML_TYPE_Q1_1:
             case GGML_TYPE_Q4_0:
             case GGML_TYPE_Q4_1:
             case GGML_TYPE_Q5_0:

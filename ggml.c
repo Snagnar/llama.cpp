@@ -775,6 +775,13 @@ typedef struct {
 } block_q1_0;
 static_assert(sizeof(block_q1_0) == sizeof(ggml_fp16_t) + QK1_0 / 8, "wrong q1_0 block size/padding");
 
+#define QK1_1 32
+typedef struct {
+    ggml_fp16_t d;          // delta
+    uint8_t qs[QK1_1 / 8];  // bits
+} block_q1_1;
+static_assert(sizeof(block_q1_1) == sizeof(ggml_fp16_t) + QK1_1 / 8, "wrong q1_0 block size/padding");
+
 #define QK4_0 32
 typedef struct {
     ggml_fp16_t d;          // delta
@@ -823,7 +830,7 @@ typedef struct {
 static_assert(sizeof(block_q8_1) == 2*sizeof(float) + QK8_1, "wrong q8_1 block size/padding");
 
 // reference implementation for deterministic creation of model files
-static void quantize_row_q1_0_reference(const float * restrict x, block_q4_0 * restrict y, int k) {
+static void quantize_row_q1_0_reference(const float * restrict x, block_q1_0 * restrict y, int k) {
     static const int qk = QK4_0;
 
     assert(k % qk == 0);
@@ -1592,11 +1599,11 @@ static const quantize_fns_t quantize_fns[GGML_TYPE_COUNT] = {
         .vec_dot_type             = GGML_TYPE_Q8_0,
     },
     [GGML_TYPE_Q1_1] = {
-        .dequantize_row_q         = (dequantize_row_q_t) dequantize_row_q4_0,
-        .quantize_row_q           = quantize_row_q4_0,
-        .quantize_row_q_reference = (quantize_row_q_t) quantize_row_q4_0_reference,
+        .dequantize_row_q         = (dequantize_row_q_t) dequantize_row_q1_0,
+        .quantize_row_q           = quantize_row_q1_0,
+        .quantize_row_q_reference = (quantize_row_q_t) quantize_row_q1_0_reference,
         .quantize_row_q_dot       = quantize_row_q8_0,
-        .vec_dot_q                = ggml_vec_dot_q4_0_q8_0,
+        .vec_dot_q                = ggml_vec_dot_q1_0_q8_0,
         .vec_dot_type             = GGML_TYPE_Q8_0,
     },
     [GGML_TYPE_Q4_0] = {
@@ -2606,9 +2613,9 @@ static void ggml_vec_dot_q1_0_q8_0(const int n, float * restrict s, const void *
         // convert 0 to -1
         __m256i bx = _mm256_or_si256(_mm256_cmpgt_epi8(_mm256_set1_epi8(1), bytes_x), bytes_x);
 
-        __m256i by = _mm256_set1_epi8((const __m256i *)y[i].qs);
+        __m256i by = _mm256_loadu_si256((const __m256i *)y[i].qs);
 
-        const __m256i ax = _mm256_sign_epi8(by, bx);
+        // const __m256 ax = (const __m256) _mm256_sign_epi8(by, bx);
 
         const __m256 q = mul_sum_i8_pairs_float(bx, by);
 
@@ -3796,11 +3803,13 @@ static const int GGML_BLCK_SIZE[GGML_TYPE_COUNT] = {
     [GGML_TYPE_Q5_1] = QK5_1,
     [GGML_TYPE_Q8_0] = QK8_0,
     [GGML_TYPE_Q8_1] = QK8_1,
+    [GGML_TYPE_Q1_0] = QK1_0,
+    [GGML_TYPE_Q1_1] = QK1_1,
     [GGML_TYPE_I8]   = 1,
     [GGML_TYPE_I16]  = 1,
     [GGML_TYPE_I32]  = 1,
 };
-static_assert(GGML_TYPE_COUNT == 13, "GGML_BLCK_SIZE is outdated");
+static_assert(GGML_TYPE_COUNT == 15, "GGML_BLCK_SIZE is outdated");
 
 static const size_t GGML_TYPE_SIZE[GGML_TYPE_COUNT] = {
     [GGML_TYPE_F32]  = sizeof(float),
@@ -3811,11 +3820,13 @@ static const size_t GGML_TYPE_SIZE[GGML_TYPE_COUNT] = {
     [GGML_TYPE_Q5_1] = sizeof(block_q5_1),
     [GGML_TYPE_Q8_0] = sizeof(block_q8_0),
     [GGML_TYPE_Q8_1] = sizeof(block_q8_1),
+    [GGML_TYPE_Q1_0] = sizeof(block_q1_0),
+    [GGML_TYPE_Q1_1] = sizeof(block_q1_0),
     [GGML_TYPE_I8]   = sizeof(int8_t),
     [GGML_TYPE_I16]  = sizeof(int16_t),
     [GGML_TYPE_I32]  = sizeof(int32_t),
 };
-static_assert(GGML_TYPE_COUNT == 13, "GGML_TYPE_SIZE is outdated");
+static_assert(GGML_TYPE_COUNT == 15, "GGML_TYPE_SIZE is outdated");
 
 
 static const char * GGML_TYPE_NAME[GGML_TYPE_COUNT] = {
@@ -3827,11 +3838,13 @@ static const char * GGML_TYPE_NAME[GGML_TYPE_COUNT] = {
     [GGML_TYPE_Q5_1] = "q5_1",
     [GGML_TYPE_Q8_0] = "q8_0",
     [GGML_TYPE_Q8_1] = "q8_1",
+    [GGML_TYPE_Q1_0] = "q1_0",
+    [GGML_TYPE_Q1_1] = "q1_1",
     [GGML_TYPE_I8]   = "i8",
     [GGML_TYPE_I16]  = "i16",
     [GGML_TYPE_I32]  = "i32",
 };
-static_assert(GGML_TYPE_COUNT == 13, "GGML_TYPE_NAME is outdated");
+static_assert(GGML_TYPE_COUNT == 15, "GGML_TYPE_NAME is outdated");
 
 static bool GGML_IS_QUANTIZED[GGML_TYPE_COUNT] = {
     [GGML_TYPE_F32]  = false,
@@ -3842,11 +3855,13 @@ static bool GGML_IS_QUANTIZED[GGML_TYPE_COUNT] = {
     [GGML_TYPE_Q5_1] = true,
     [GGML_TYPE_Q8_0] = true,
     [GGML_TYPE_Q8_1] = true,
+    [GGML_TYPE_Q1_0] = true,
+    [GGML_TYPE_Q1_1] = true,
     [GGML_TYPE_I8]   = false,
     [GGML_TYPE_I16]  = false,
     [GGML_TYPE_I32]  = false,
 };
-static_assert(GGML_TYPE_COUNT == 13, "GGML_IS_QUANTIZED is outdated");
+static_assert(GGML_TYPE_COUNT == 15, "GGML_IS_QUANTIZED is outdated");
 
 static const char * GGML_OP_NAME[GGML_OP_COUNT] = {
     "NONE",
@@ -4153,6 +4168,8 @@ enum ggml_type ggml_ftype_to_ggml_type(enum ggml_ftype ftype) {
         case GGML_FTYPE_MOSTLY_Q5_0:          wtype = GGML_TYPE_Q5_0;  break;
         case GGML_FTYPE_MOSTLY_Q5_1:          wtype = GGML_TYPE_Q5_1;  break;
         case GGML_FTYPE_MOSTLY_Q8_0:          wtype = GGML_TYPE_Q8_0;  break;
+        case GGML_FTYPE_MOSTLY_Q1_0:          wtype = GGML_TYPE_Q1_0;  break;
+        case GGML_FTYPE_MOSTLY_Q1_1:          wtype = GGML_TYPE_Q1_1;  break;
         case GGML_FTYPE_UNKNOWN:              wtype = GGML_TYPE_COUNT; break;
         case GGML_FTYPE_MOSTLY_Q4_1_SOME_F16: wtype = GGML_TYPE_COUNT; break;
     }
@@ -7931,6 +7948,8 @@ static void ggml_compute_forward_add(
                     GGML_ASSERT(false);
                 }
             } break;
+        case GGML_TYPE_Q1_0:
+        case GGML_TYPE_Q1_1:
         case GGML_TYPE_Q4_0:
         case GGML_TYPE_Q4_1:
         case GGML_TYPE_Q5_0:
@@ -8233,6 +8252,8 @@ static void ggml_compute_forward_add1(
                     GGML_ASSERT(false);
                 }
             } break;
+        case GGML_TYPE_Q1_0:
+        case GGML_TYPE_Q1_1:
         case GGML_TYPE_Q4_0:
         case GGML_TYPE_Q4_1:
         case GGML_TYPE_Q5_0:
@@ -8355,6 +8376,8 @@ static void ggml_compute_forward_acc(
                 ggml_compute_forward_acc_f32(params, src0, src1, opt0, dst);
             } break;
         case GGML_TYPE_F16:
+        case GGML_TYPE_Q1_0:
+        case GGML_TYPE_Q1_1:
         case GGML_TYPE_Q4_0:
         case GGML_TYPE_Q4_1:
         case GGML_TYPE_Q5_0:
@@ -10448,6 +10471,8 @@ static void ggml_compute_forward_mul_mat(
         const struct ggml_tensor * src1,
         struct ggml_tensor * dst) {
     switch (src0->type) {
+        case GGML_TYPE_Q1_0:
+        case GGML_TYPE_Q1_1:
         case GGML_TYPE_Q4_0:
         case GGML_TYPE_Q4_1:
         case GGML_TYPE_Q5_0:
@@ -10631,6 +10656,8 @@ static void ggml_compute_forward_set(
                 ggml_compute_forward_set_f32(params, src0, src1, opt0, dst);
             } break;
         case GGML_TYPE_F16:
+        case GGML_TYPE_Q1_0:
+        case GGML_TYPE_Q1_1:
         case GGML_TYPE_Q4_0:
         case GGML_TYPE_Q4_1:
         case GGML_TYPE_Q5_0:
@@ -10796,6 +10823,8 @@ static void ggml_compute_forward_get_rows(
         const struct ggml_tensor * src1,
         struct ggml_tensor * dst) {
     switch (src0->type) {
+        case GGML_TYPE_Q1_0:
+        case GGML_TYPE_Q1_1:
         case GGML_TYPE_Q4_0:
         case GGML_TYPE_Q4_1:
         case GGML_TYPE_Q5_0:
@@ -11342,6 +11371,8 @@ static void ggml_compute_forward_alibi(
             {
                 ggml_compute_forward_alibi_f32(params, src0, src1, dst);
             } break;
+        case GGML_TYPE_Q1_0:
+        case GGML_TYPE_Q1_1:
         case GGML_TYPE_Q4_0:
         case GGML_TYPE_Q4_1:
         case GGML_TYPE_Q5_0:
@@ -11413,6 +11444,8 @@ static void ggml_compute_forward_clamp(
                 ggml_compute_forward_clamp_f32(params, src0, src1, dst);
             } break;
         case GGML_TYPE_F16:
+        case GGML_TYPE_Q1_0:
+        case GGML_TYPE_Q1_1:
         case GGML_TYPE_Q4_0:
         case GGML_TYPE_Q4_1:
         case GGML_TYPE_Q5_0:
@@ -16262,6 +16295,51 @@ enum ggml_opt_result ggml_opt(
 
 ////////////////////////////////////////////////////////////////////////////////
 
+size_t ggml_quantize_q1_0(const float * src, void * dst, int n, int k, int64_t * hist) {
+    assert(k % QK1_0 == 0);
+    const int nb = k / QK1_0;
+
+    for (int b = 0; b < n; b += k) {
+        block_q1_0 * restrict y = (block_q1_0 *) dst + b/QK1_0;
+
+        quantize_row_q1_0_reference(src + b, y, k);
+
+        for (int i = 0; i < nb; i++) {
+            for (int j = 0; j < QK1_0; j += 8) {
+                for (int bit = 0; bit < 8; ++bit) {
+                    const uint8_t vi = (y[i].qs[j/8] >> bit) & 1;
+                    hist[vi]++;
+                }
+            }
+        }
+    }
+
+    return (n/QK1_0*sizeof(block_q1_0));
+}
+
+size_t ggml_quantize_q1_1(const float * src, void * dst, int n, int k, int64_t * hist) {
+    assert(k % QK1_0 == 0);
+    const int nb = k / QK1_0;
+
+    for (int b = 0; b < n; b += k) {
+        block_q1_0 * restrict y = (block_q1_0 *) dst + b/QK1_0;
+
+        quantize_row_q1_0_reference(src + b, y, k);
+
+        for (int i = 0; i < nb; i++) {
+            for (int j = 0; j < QK1_0; j += 8) {
+                for (int bit = 0; bit < 8; ++bit) {
+                    const uint8_t vi = (y[i].qs[j/8] >> bit) & 1;
+                    hist[vi]++;
+                }
+            }
+        }
+    }
+
+    return (n/QK1_0*sizeof(block_q1_0));
+}
+
+
 size_t ggml_quantize_q4_0(const float * src, void * dst, int n, int k, int64_t * hist) {
     assert(k % QK4_0 == 0);
     const int nb = k / QK4_0;
@@ -16392,6 +16470,18 @@ size_t ggml_quantize_q8_0(const float * src, void * dst, int n, int k, int64_t *
 size_t ggml_quantize_chunk(enum ggml_type type, const float * src, void * dst, int start, int n, int64_t * hist) {
     size_t result = 0;
     switch (type) {
+        case GGML_TYPE_Q1_0:
+            {
+                GGML_ASSERT(start % QK1_0 == 0);
+                block_q1_0 * block = (block_q1_0*)dst + start / QK1_0;
+                result = ggml_quantize_q1_0(src + start, block, n, n, hist);
+            } break;
+        case GGML_TYPE_Q1_1:
+            {
+                GGML_ASSERT(start % QK1_0 == 0);
+                block_q1_0 * block = (block_q1_0*)dst + start / QK1_0;
+                result = ggml_quantize_q1_1(src + start, block, n, n, hist);
+            } break;
         case GGML_TYPE_Q4_0:
             {
                 GGML_ASSERT(start % QK4_0 == 0);

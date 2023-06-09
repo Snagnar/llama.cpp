@@ -266,6 +266,8 @@ extern "C" {
         GGML_FTYPE_MOSTLY_Q8_0 = 7,  // except 1d tensors
         GGML_FTYPE_MOSTLY_Q5_0 = 8,  // except 1d tensors
         GGML_FTYPE_MOSTLY_Q5_1 = 9,  // except 1d tensors
+        GGML_FTYPE_MOSTLY_Q1_0 = 10,  // except 1d tensors
+        GGML_FTYPE_MOSTLY_Q1_1 = 11,  // except 1d tensors
     };
 
     // available tensor operations:
@@ -1099,6 +1101,8 @@ extern "C" {
     // quantization
     //
 
+    GGML_API size_t ggml_quantize_q1_0(const float * src, void * dst, int n, int k, int64_t * hist);
+    GGML_API size_t ggml_quantize_q1_1(const float * src, void * dst, int n, int k, int64_t * hist);
     GGML_API size_t ggml_quantize_q4_0(const float * src, void * dst, int n, int k, int64_t * hist);
     GGML_API size_t ggml_quantize_q4_1(const float * src, void * dst, int n, int k, int64_t * hist);
     GGML_API size_t ggml_quantize_q5_0(const float * src, void * dst, int n, int k, int64_t * hist);
