@@ -31,6 +31,11 @@
 #define LLAMA_SESSION_MAGIC          LLAMA_FILE_MAGIC_GGSN
 #define LLAMA_SESSION_VERSION        1
 
+#if defined(GGML_USE_CUBLAS) || defined(GGML_USE_CLBLAST)
+// Defined when llama.cpp is compiled with support for offloading model layers to GPU.
+#define LLAMA_SUPPORTS_GPU_OFFLOAD
+#endif
+
 #ifdef __cplusplus
 extern "C" {
 #endif
@@ -89,6 +94,8 @@ extern "C" {
         LLAMA_FTYPE_MOSTLY_Q8_0          = 7, // except 1d tensors
         LLAMA_FTYPE_MOSTLY_Q5_0          = 8, // except 1d tensors
         LLAMA_FTYPE_MOSTLY_Q5_1          = 9, // except 1d tensors
+        LLAMA_FTYPE_MOSTLY_Q1_0          = 10, // except 1d tensors
+        LLAMA_FTYPE_MOSTLY_Q1_1          = 11, // except 1d tensors
     };
 
     LLAMA_API struct llama_context_params llama_context_default_params();

@@ -12,6 +12,8 @@
 #include "ggml.h"
 #ifdef GGML_USE_CUBLAS
 #include "ggml-cuda.h"
+#elif defined(GGML_USE_CLBLAST)
+#include "ggml-opencl.h"
 #endif
 
 #include <array>
@@ -40,6 +42,7 @@
 // available llama models
 enum e_model {
     MODEL_UNKNOWN,
+    MODEL_3B,
     MODEL_7B,
     MODEL_13B,
     MODEL_30B,
@@ -56,6 +59,7 @@ static const size_t MB = 1024*1024;
 static const std::map<e_model, size_t> & MEM_REQ_SCRATCH0()
 {
     static std::map<e_model, size_t> k_sizes = {
+        { MODEL_3B,    128ull * MB },
         { MODEL_7B,    512ull * MB },
         { MODEL_13B,   512ull * MB },
         { MODEL_30B,   512ull * MB },
@@ -67,6 +71,7 @@ static const std::map<e_model, size_t> & MEM_REQ_SCRATCH0()
 static const std::map<e_model, size_t> & MEM_REQ_SCRATCH1()
 {
     static std::map<e_model, size_t> k_sizes = {
+        { MODEL_3B,    128ull * MB },
         { MODEL_7B,    512ull * MB },
         { MODEL_13B,   512ull * MB },
         { MODEL_30B,   512ull * MB },
@@ -79,6 +84,7 @@ static const std::map<e_model, size_t> & MEM_REQ_SCRATCH1()
 static const std::map<e_model, size_t> & MEM_REQ_KV_SELF()
 {
     static std::map<e_model, size_t> k_sizes = {
+        { MODEL_3B,    682ull * MB },
         { MODEL_7B,   1026ull * MB },
         { MODEL_13B,  1608ull * MB },
         { MODEL_30B,  3124ull * MB },
@@ -92,6 +98,7 @@ static const std::map<e_model, size_t> & MEM_REQ_KV_SELF()
 static const std::map<e_model, size_t> & MEM_REQ_EVAL()
 {
     static std::map<e_model, size_t> k_sizes = {
+        { MODEL_3B,   512ull * MB },
         { MODEL_7B,   768ull * MB },
         { MODEL_13B, 1024ull * MB },
         { MODEL_30B, 1280ull * MB },
@@ -495,6 +502,8 @@ struct llama_file_loader {
             switch (shard.type) {
                 case GGML_TYPE_F32:
                 case GGML_TYPE_F16:
+                case GGML_TYPE_Q1_0:
+                case GGML_TYPE_Q1_1:
                 case GGML_TYPE_Q4_0:
                 case GGML_TYPE_Q4_1:
                 case GGML_TYPE_Q5_0:
@@ -570,6 +579,8 @@ struct llama_file_saver {
         switch (new_type) {
             case GGML_TYPE_F32:
             case GGML_TYPE_F16:
+            case GGML_TYPE_Q1_0:
+            case GGML_TYPE_Q1_1:
             case GGML_TYPE_Q4_0:
             case GGML_TYPE_Q4_1:
             case GGML_TYPE_Q5_0:
@@ -884,6 +895,8 @@ static const char *llama_ftype_name(enum llama_ftype ftype) {
     switch (ftype) {
         case LLAMA_FTYPE_ALL_F32:     return "all F32";
         case LLAMA_FTYPE_MOSTLY_F16:  return "mostly F16";
+        case LLAMA_FTYPE_MOSTLY_Q1_0: return "mostly Q1_0";
+        case LLAMA_FTYPE_MOSTLY_Q1_1: return "mostly Q1_1";
         case LLAMA_FTYPE_MOSTLY_Q4_0: return "mostly Q4_0";
         case LLAMA_FTYPE_MOSTLY_Q4_1: return "mostly Q4_1";
         case LLAMA_FTYPE_MOSTLY_Q4_1_SOME_F16:
@@ -897,6 +910,7 @@ static const char *llama_ftype_name(enum llama_ftype ftype) {
 
 static const char *llama_model_type_name(e_model type) {
     switch (type) {
+        case MODEL_3B: return "3B";
         case MODEL_7B: return "7B";
         case MODEL_13B: return "13B";
         case MODEL_30B: return "30B";
@@ -930,6 +944,7 @@ static void llama_model_load_internal(
 
     {
         switch (hparams.n_layer) {
+            case 26: model.type = e_model::MODEL_3B; break;
             case 32: model.type = e_model::MODEL_7B; break;
             case 40: model.type = e_model::MODEL_13B; break;
             case 60: model.type = e_model::MODEL_30B; break;
@@ -1092,7 +1107,7 @@ static void llama_model_load_internal(
             fprintf(stderr, "%s: [cublas] offloading output layer to GPU\n", __func__);
         }
         fprintf(stderr, "%s: [cublas] total VRAM used: %zu MB\n", __func__, vram_total / 1024 / 1024);
-#else
+#elif !defined(GGML_USE_CLBLAST)
         (void) n_gpu_layers;
 #endif
     }
@@ -1125,7 +1140,33 @@ static void llama_model_load_internal(
             done_size += lt.size;
         }
     }
-#endif // GGML_USE_CUBLAS
+#elif defined(GGML_USE_CLBLAST)
+    {
+        const int n_gpu = std::min(n_gpu_layers, int(hparams.n_layer));
+
+        fprintf(stderr, "ggml_opencl: offloading %d layers to GPU\n", n_gpu);
+
+        size_t vram_total = 0;
+
+        for (int i = 0; i < n_gpu; ++i) {
+            const auto & layer = model.layers[i];
+
+            ggml_cl_transform_tensor(layer.wq); vram_total += ggml_nbytes(layer.wq);
+            ggml_cl_transform_tensor(layer.wk); vram_total += ggml_nbytes(layer.wk);
+            ggml_cl_transform_tensor(layer.wv); vram_total += ggml_nbytes(layer.wv);
+            ggml_cl_transform_tensor(layer.wo); vram_total += ggml_nbytes(layer.wo);
+            ggml_cl_transform_tensor(layer.w1); vram_total += ggml_nbytes(layer.w1);
+            ggml_cl_transform_tensor(layer.w2); vram_total += ggml_nbytes(layer.w2);
+            ggml_cl_transform_tensor(layer.w3); vram_total += ggml_nbytes(layer.w3);
+        }
+        if (n_gpu_layers > (int) hparams.n_layer) {
+            fprintf(stderr, "ggml_opencl: offloading output layer to GPU\n");
+            ggml_cl_transform_tensor(model.output); vram_total += ggml_nbytes(model.output);
+        }
+
+        fprintf(stderr, "ggml_opencl: total VRAM used: %zu MB\n", vram_total / 1024 / 1024);
+    }
+#endif
 
     if (progress_callback) {
         progress_callback(1.0f, progress_callback_user_data);
@@ -2023,6 +2064,8 @@ llama_token llama_sample_token(struct llama_context * ctx, llama_token_data_arra
 static void llama_model_quantize_internal(const std::string & fname_inp, const std::string & fname_out, enum llama_ftype ftype, int nthread) {
     ggml_type quantized_type;
     switch (ftype) {
+        case LLAMA_FTYPE_MOSTLY_Q1_0: quantized_type = GGML_TYPE_Q1_0; break;
+        case LLAMA_FTYPE_MOSTLY_Q1_1: quantized_type = GGML_TYPE_Q1_1; break;
         case LLAMA_FTYPE_MOSTLY_Q4_0: quantized_type = GGML_TYPE_Q4_0; break;
         case LLAMA_FTYPE_MOSTLY_Q4_1: quantized_type = GGML_TYPE_Q4_1; break;
         case LLAMA_FTYPE_MOSTLY_Q5_0: quantized_type = GGML_TYPE_Q5_0; break;
